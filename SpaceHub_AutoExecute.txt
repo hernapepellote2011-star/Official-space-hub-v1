@@ -25,6 +25,9 @@ local ASSETS = {
 	Close = "rbxassetid://128546300558788",
 	Back = "rbxassetid://131669268202968",
 	Copy = "rbxassetid://97265175061437",
+	DevicePhone = "rbxassetid://140092145387053",
+	DevicePC = "rbxassetid://106495493962806",
+	DeviceTablet = "rbxassetid://132853875319503",
 }
 SpaceHub.Assets = ASSETS
 
@@ -33,6 +36,34 @@ local SIZE = {
 	MinW = 480, MinH = 310, MaxW = 860, MaxH = 580,
 	PillW = 200, PillH = 44, Profile = 60,
 }
+
+-- Escala de la interfaz según el dispositivo (celular más pequeño, tablet mediano, PC más grande)
+local DEVICE_SCALES = { Phone = 0.8, Tablet = 0.9, PC = 1 }
+local DEVICE_OPTIONS = {
+	{ Name = "Phone", Label = "Teléfono", Image = ASSETS.DevicePhone, Symbol = "M" },
+	{ Name = "PC", Label = "PC", Image = ASSETS.DevicePC, Symbol = "PC" },
+	{ Name = "Tablet", Label = "Tablet", Image = ASSETS.DeviceTablet, Symbol = "T" },
+}
+local deviceScale = 1
+local currentDevice = "PC"
+
+local function detectDevice()
+	local ok, name = pcall(function()
+		local cam = workspace.CurrentCamera
+		local vp = cam and cam.ViewportSize or Vector2.new(1280, 720)
+		local touch = UserInputService.TouchEnabled
+		local keyboard = UserInputService.KeyboardEnabled
+		if touch and not keyboard then
+			if math.min(vp.X, vp.Y) >= 600 then
+				return "Tablet"
+			end
+			return "Phone"
+		end
+		return "PC"
+	end)
+	return ok and name or "PC"
+end
+SpaceHub.DetectDevice = detectDevice
 
 local TEXT = Color3.fromRGB(232, 234, 255)
 local MUTED = Color3.fromRGB(154, 160, 208)
@@ -667,7 +698,7 @@ local function createGui(name)
 	return gui
 end
 
-local notifGui, notifHolder, notifCount = nil, nil, 0
+local notifGui, notifHolder, notifScale, notifCount = nil, nil, nil, 0
 
 function SpaceHub:Notify(o)
 	o = o or {}
@@ -678,6 +709,7 @@ function SpaceHub:Notify(o)
 				AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -14, 1, -14),
 				Size = UDim2.new(0, 300, 1, -28), BackgroundTransparency = 1,
 			}, notifGui)
+			notifScale = new("UIScale", { Scale = deviceScale }, notifHolder)
 			new("UIListLayout", {
 				Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, VerticalAlignment = Enum.VerticalAlignment.Bottom,
 			}, notifHolder)
@@ -809,21 +841,21 @@ local function makeModal(gui, width)
 	}, gui)
 	local card = new("CanvasGroup", {
 		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(math.min(width, vp.X - 24), 0), AutomaticSize = Enum.AutomaticSize.Y,
+		Size = UDim2.fromOffset(math.min(width, vp.X / deviceScale - 24), 0), AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundColor3 = Theme.Background, BorderSizePixel = 0, GroupTransparency = 1,
 	}, veil)
 	corner(card, 12)
 	new("UIStroke", { Color = C(110, 114, 124), Thickness = 1 }, card)
-	local scale = new("UIScale", { Scale = 0.92 }, card)
+	local scale = new("UIScale", { Scale = 0.92 * deviceScale }, card)
 	pad(card, 16, 16, 16, 16)
 	new("UIListLayout", { Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder }, card)
 	tw(veil, 0.25, { BackgroundTransparency = 0.55 })
 	tw(card, 0.25, { GroupTransparency = 0 })
-	tw(scale, 0.25, { Scale = 1 })
+	tw(scale, 0.25, { Scale = deviceScale })
 	local modal = { Card = card }
 	function modal.Close(after)
 		tw(veil, 0.2, { BackgroundTransparency = 1 })
-		tw(scale, 0.2, { Scale = 0.92 })
+		tw(scale, 0.2, { Scale = 0.92 * deviceScale })
 		local t = tw(card, 0.2, { GroupTransparency = 1 })
 		t.Completed:Connect(function()
 			veil:Destroy()
@@ -2019,7 +2051,7 @@ local function makeApi(page, tab, register)
 		local maxCount = o.Max or 40
 		local count = math.clamp(math.floor(o.Count or 5), 1, maxCount)
 		local names = o.Names or {}
-		local size = o.Size or 56
+		local size = math.floor((o.Size or 56) * deviceScale + 0.5)
 		local fgui
 		local conns = {}
 
@@ -2356,170 +2388,6 @@ local function makeApi(page, tab, register)
 	return api
 end
 
-local AE_DIRS = { "../Autoexecute/", "../autoexec/", "Autoexecute/", "autoexec/" }
-local LIB_URL = "https://raw.githubusercontent.com/hernapepellote2011-star/Official-space-hub/refs/heads/main/Space%20hub%20library.lua"
-local AE_OFF = "SpaceHub/ae_disabled.txt"
-
-local function aeConfig()
-	local ae = SpaceHub.AutoExecute
-	if ae == nil and SpaceHub._settings then
-		ae = SpaceHub._settings.AutoExecute
-	end
-	if ae == nil then
-		ae = { Url = LIB_URL, FileName = "SpaceHub_Library" }
-	end
-	return ae
-end
-
-local function aeFileName()
-	local ae = aeConfig()
-	local base = type(ae) == "table" and ae.FileName or nil
-	if not base then
-		local nm = tostring((SpaceHub._settings and SpaceHub._settings.Name) or "Menu")
-		base = "SpaceHub_" .. (nm:gsub("[^%w_%-]", "_"))
-	end
-	return (tostring(base):gsub("%.lua$", "")) .. ".lua"
-end
-
-local function aePayload()
-	local ae = aeConfig()
-	local body
-	if type(ae) == "string" then
-		body = ae:match("^https?://%S+$") and string.format("loadstring(game:HttpGet(%q))()", ae) or ae
-	elseif type(ae) == "table" then
-		if ae.Source then
-			body = tostring(ae.Source)
-		elseif ae.Url then
-			body = string.format("loadstring(game:HttpGet(%q))()", tostring(ae.Url))
-		end
-	end
-	if not body then
-		return nil
-	end
-	return table.concat({
-		"if not game:IsLoaded() then game.Loaded:Wait() end",
-		"local env = (getgenv and getgenv()) or _G",
-		"if env.__SpaceHubAutoExec then return end",
-		"env.__SpaceHubAutoExec = true",
-		"task.spawn(function()",
-		"\tlocal lp = game:GetService('Players').LocalPlayer",
-		"\twhile not lp do task.wait(0.5) lp = game:GetService('Players').LocalPlayer end",
-		"\tlp:WaitForChild('PlayerGui', 30)",
-		"\ttask.wait(6)",
-		"\tlocal ok, err = pcall(function()",
-		body,
-		"\tend)",
-		"\tif not ok then warn('[SpaceHub AutoExec] ' .. tostring(err)) end",
-		"end)",
-	}, "\n")
-end
-
-local function aeFind()
-	local name = aeFileName()
-	for _, dir in ipairs(AE_DIRS) do
-		local ok, exists = pcall(isfile, dir .. name)
-		if ok and exists then
-			return dir .. name
-		end
-	end
-	return nil
-end
-
-function SpaceHub:SetAutoExecute(value)
-	self.AutoExecute = value
-end
-
-function SpaceHub:IsAutoExecuteInstalled()
-	return aeFind() ~= nil
-end
-
-function SpaceHub:InstallAutoExecute()
-	local src = aePayload()
-	if not src then
-		return false, "No script set. Add AutoExecute = { Url = \"...\" } to CreateWindow."
-	end
-	pcall(function()
-		if type(isfile) == "function" and isfile(AE_OFF) then
-			delfile(AE_OFF)
-		end
-	end)
-	local name = aeFileName()
-	for _, dir in ipairs(AE_DIRS) do
-		local path = dir .. name
-		local wrote = pcall(function()
-			if not dir:find("^%.%.") and type(isfolder) == "function" and not isfolder((dir:gsub("/$", ""))) then
-				error("folder missing")
-			end
-			writefile(path, src)
-		end)
-		if wrote then
-			local verified = true
-			if type(isfile) == "function" then
-				local okF, exists = pcall(isfile, path)
-				verified = okF and exists == true
-			end
-			if verified then
-				return true, path
-			end
-		end
-	end
-	local q = queue_on_teleport or (syn and syn.queue_on_teleport)
-	if q then
-		pcall(q, src)
-		return true, "teleport"
-	end
-	return false, "Could not write to the autoexec folder."
-end
-
-function SpaceHub:RemoveAutoExecute()
-	pcall(function()
-		if type(isfolder) == "function" and type(makefolder) == "function" and not isfolder("SpaceHub") then
-			makefolder("SpaceHub")
-		end
-		writefile(AE_OFF, "1")
-	end)
-	if type(delfile) ~= "function" then
-		return false
-	end
-	local name, removed = aeFileName(), false
-	for _, dir in ipairs(AE_DIRS) do
-		local path = dir .. name
-		local ok, exists = pcall(isfile, path)
-		if ok and exists and pcall(delfile, path) then
-			removed = true
-		end
-	end
-	return removed
-end
-
-function SpaceHub:EnsureAutoExecute()
-	local okOff, off = pcall(function()
-		return type(isfile) == "function" and isfile(AE_OFF)
-	end)
-	if okOff and off then
-		return false
-	end
-	local found = aeFind()
-	if found then
-		local okR, cur = pcall(readfile, found)
-		local want = aePayload()
-		if want and okR and cur ~= want then
-			pcall(writefile, found, want)
-		end
-		return true
-	end
-	local ok, info = self:InstallAutoExecute()
-	if ok then
-		self:Notify({
-			Title = "Auto execute enabled",
-			Content = info == "teleport" and "Only runs when teleporting (autoexec folder not available)."
-				or ("Saved to " .. tostring(info)),
-			Duration = 4,
-		})
-	end
-	return ok
-end
-
 function SpaceHub:CreateWindow(settings)
 	settings = settings or {}
 	if self._window then
@@ -2527,6 +2395,11 @@ function SpaceHub:CreateWindow(settings)
 	end
 	self._settings = settings
 	self.Flags = {}
+
+	-- Detecta el dispositivo antes de dibujar cualquier interfaz
+	currentDevice = (settings.Device and DEVICE_SCALES[settings.Device]) and settings.Device or detectDevice()
+	deviceScale = DEVICE_SCALES[currentDevice] or 1
+	SpaceHub.Device = currentDevice
 
 	if settings.Theme then
 		setThemeByName(settings.Theme)
@@ -2550,10 +2423,10 @@ function SpaceHub:CreateWindow(settings)
 		return workspace.CurrentCamera.ViewportSize
 	end
 	local function maxW()
-		return math.min(SIZE.MaxW, screen().X - 24)
+		return math.min(SIZE.MaxW, (screen().X - 24) / deviceScale)
 	end
 	local function maxH()
-		return math.min(SIZE.MaxH, screen().Y - 80)
+		return math.min(SIZE.MaxH, (screen().Y - 80) / deviceScale)
 	end
 	local W = math.clamp(settings.Width or SIZE.Width, math.min(SIZE.MinW, maxW()), maxW())
 	local H = math.clamp(settings.Height or SIZE.Height, math.min(SIZE.MinH, maxH()), maxH())
@@ -2565,9 +2438,10 @@ function SpaceHub:CreateWindow(settings)
 
 	local container = new("Frame", {
 		Size = UDim2.fromOffset(W, H),
-		Position = UDim2.fromOffset((screen().X - W) / 2, (screen().Y - H - 30) / 2),
+		Position = UDim2.fromOffset((screen().X - W * deviceScale) / 2, (screen().Y - H * deviceScale - 30) / 2),
 		BackgroundTransparency = 1,
 	}, gui)
+	local uiScale = new("UIScale", { Scale = deviceScale }, container)
 
 	local shadows = {}
 	for i = 1, 8 do
@@ -2700,6 +2574,7 @@ function SpaceHub:CreateWindow(settings)
 	end
 
 	local showView, selectTab, applyMode, goTo
+	local applyDevice, openAdapt
 	local mode = "vertical"
 
 	local setSearchLayout
@@ -3110,6 +2985,14 @@ function SpaceHub:CreateWindow(settings)
 			end,
 		}
 	end
+	self.Flags["SpaceHub_Device"] = {
+		Type = "Device", CurrentValue = currentDevice,
+		Set = function(_, name)
+			if applyDevice then
+				applyDevice(name, true)
+			end
+		end,
+	}
 	sApi:CreateDropdown({
 		Name = "Menu type", Options = { "Horizontal categories", "Vertical categories" }, CurrentOption = { "Vertical categories" },
 		Flag = "SpaceHub_MenuType",
@@ -3125,6 +3008,14 @@ function SpaceHub:CreateWindow(settings)
 			end)
 			if ok and kc then
 				toggleKey = kc
+			end
+		end,
+	})
+	sApi:CreateButton({
+		Name = "Adaptar a",
+		Callback = function()
+			if openAdapt then
+				openAdapt()
 			end
 		end,
 	})
@@ -3241,57 +3132,6 @@ function SpaceHub:CreateWindow(settings)
 		end,
 	})
 
-	sApi:CreateSection("Autoexecute")
-	do
-		local aeToggle
-		local reverting = false
-		local function revert(state)
-			reverting = true
-			if aeToggle then
-				aeToggle:Set(state)
-			end
-			reverting = false
-		end
-		pcall(function()
-			SpaceHub:EnsureAutoExecute()
-		end)
-		local okInstalled, installed = pcall(function()
-			return SpaceHub:IsAutoExecuteInstalled()
-		end)
-		aeToggle = sApi:CreateToggle({
-			Name = "Auto execute",
-			CurrentValue = okInstalled and installed == true,
-			Callback = function(on)
-				if reverting then
-					return
-				end
-				if on then
-					local ok, info = SpaceHub:InstallAutoExecute()
-					if ok then
-						local viaTeleport = (info == "teleport")
-						SpaceHub:Notify({
-							Title = "Auto execute enabled",
-							Content = viaTeleport and "Only runs when teleporting (autoexec folder not available)."
-								or ("Saved to " .. tostring(info)),
-							Duration = 4,
-						})
-					else
-						SpaceHub:Notify({ Title = "Auto execute failed", Content = tostring(info), Duration = 5 })
-						task.defer(revert, false)
-					end
-				else
-					local removed = SpaceHub:RemoveAutoExecute()
-					SpaceHub:Notify({
-						Title = removed and "Auto execute disabled" or "Nothing removed",
-						Content = removed and "The autoexec file was deleted." or "No file found or delete not supported.",
-						Duration = 3,
-					})
-				end
-			end,
-		})
-		SpaceHub.Flags["SpaceHub_AutoExecuteState"] = nil
-	end
-
 	sApi:CreateSection("Window")
 
 	local grip = new("TextButton", {
@@ -3322,9 +3162,10 @@ function SpaceHub:CreateWindow(settings)
 		if v then
 			w, h = SIZE.PillW, SIZE.PillH
 		end
-		local cx = container.Position.X.Offset + container.Size.X.Offset / 2
-		local cy = container.Position.Y.Offset + container.Size.Y.Offset / 2
-		local p = limit(cx - w / 2, cy - h / 2, w, h)
+		local sc = uiScale.Scale
+		local cx = container.Position.X.Offset + container.Size.X.Offset * sc / 2
+		local cy = container.Position.Y.Offset + container.Size.Y.Offset * sc / 2
+		local p = limit(cx - w * sc / 2, cy - h * sc / 2, w * sc, h * sc)
 		tw(container, 0.4, { Size = UDim2.fromOffset(w, h), Position = UDim2.fromOffset(p.X, p.Y) }, Enum.EasingStyle.Quint)
 		local r = v and SIZE.PillH / 2 or 12
 		tw(frameCorner, 0.4, { CornerRadius = UDim.new(0, r) })
@@ -3440,8 +3281,8 @@ function SpaceHub:CreateWindow(settings)
 		end
 		if resizing then
 			local d = input.Position - resizing.start
-			W = math.clamp(resizing.w + d.X, math.min(SIZE.MinW, maxW()), maxW())
-			H = math.clamp(resizing.h + d.Y, math.min(SIZE.MinH, maxH()), maxH())
+			W = math.clamp(resizing.w + d.X / deviceScale, math.min(SIZE.MinW, maxW()), maxW())
+			H = math.clamp(resizing.h + d.Y / deviceScale, math.min(SIZE.MinH, maxH()), maxH())
 			container.Size = UDim2.fromOffset(W, H)
 			return
 		end
@@ -3495,12 +3336,137 @@ function SpaceHub:CreateWindow(settings)
 		AutoButtonColor = false, Text = "Show " .. menuName, Font = Enum.Font.GothamMedium, TextSize = 13,
 		TextColor3 = TEXT, Visible = false, ZIndex = 30,
 	}, gui)
+	local showScale = new("UIScale", { Scale = deviceScale }, showBtn)
 	themed(showBtn, "BackgroundColor3", "Background")
 	corner(showBtn, 17)
 	metalStroke(showBtn, 1.5)
 	local mobile = settings.MobileButton
 	if mobile == nil then
 		mobile = UserInputService.TouchEnabled
+	end
+
+	-- Cambia el tamaño de toda la interfaz según el dispositivo elegido
+	function applyDevice(name, animate)
+		local sc = DEVICE_SCALES[name]
+		if not sc then
+			return false
+		end
+		currentDevice = name
+		SpaceHub.Device = name
+		deviceScale = sc
+		local devFlag = SpaceHub.Flags["SpaceHub_Device"]
+		if devFlag then
+			devFlag.CurrentValue = name
+		end
+		W = math.clamp(settings.Width or SIZE.Width, math.min(SIZE.MinW, maxW()), maxW())
+		H = math.clamp(settings.Height or SIZE.Height, math.min(SIZE.MinH, maxH()), maxH())
+		local w, h = W, H
+		if minimized then
+			w, h = SIZE.PillW, SIZE.PillH
+		end
+		local cx = container.Position.X.Offset + container.AbsoluteSize.X / 2
+		local cy = container.Position.Y.Offset + container.AbsoluteSize.Y / 2
+		local p = limit(cx - w * sc / 2, cy - h * sc / 2, w * sc, h * sc)
+		if animate then
+			tw(uiScale, 0.4, { Scale = sc }, Enum.EasingStyle.Quint)
+			tw(showScale, 0.4, { Scale = sc }, Enum.EasingStyle.Quint)
+			tw(container, 0.4, { Size = UDim2.fromOffset(w, h), Position = UDim2.fromOffset(p.X, p.Y) }, Enum.EasingStyle.Quint)
+		else
+			uiScale.Scale = sc
+			showScale.Scale = sc
+			container.Size = UDim2.fromOffset(w, h)
+			container.Position = UDim2.fromOffset(p.X, p.Y)
+		end
+		if notifScale and notifScale.Parent then
+			notifScale.Scale = sc
+		end
+		return true
+	end
+
+	-- Ventana "Adaptar a": tres botones cuadrados (Teléfono, PC, Tablet)
+	function openAdapt()
+		if dialogOpen then
+			return
+		end
+		dialogOpen = true
+		local modal = makeModal(gui, 420)
+		modalText(modal.Card, 1, "Adaptar a", 16, TEXT, Enum.Font.GothamBold)
+		modalText(modal.Card, 2, "Elige el dispositivo para ajustar el tamaño de la interfaz.", 13, MUTED)
+
+		local vp = screen()
+		local cardW = math.min(420, vp.X / deviceScale - 24)
+		local sq = math.clamp(math.floor((cardW - 32 - 24) / 3), 70, 120)
+		local optRow = new("Frame", {
+			LayoutOrder = 3, Size = UDim2.new(1, 0, 0, sq + 30), BackgroundTransparency = 1,
+		}, modal.Card)
+		new("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 12),
+			HorizontalAlignment = Enum.HorizontalAlignment.Center, SortOrder = Enum.SortOrder.LayoutOrder,
+		}, optRow)
+
+		local picked = false
+		local function finish(after)
+			modal.Close(function()
+				dialogOpen = false
+				if after then
+					after()
+				end
+			end)
+		end
+
+		for i, d in ipairs(DEVICE_OPTIONS) do
+			local opt = new("Frame", {
+				LayoutOrder = i, Size = UDim2.fromOffset(sq, sq + 30), BackgroundTransparency = 1,
+			}, optRow)
+			local box = new("Frame", {
+				Size = UDim2.fromOffset(sq, sq), BackgroundColor3 = WHITE, BorderSizePixel = 0,
+			}, opt)
+			corner(box, 12)
+			new("UIGradient", { Rotation = 90, Color = ColorSequence.new(GRAY_A, GRAY_B) }, box)
+			metalStroke(box, 2)
+			local img = new("ImageLabel", {
+				AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(0.6, 0.6),
+				BackgroundTransparency = 1, Image = d.Image, ImageColor3 = WHITE, ScaleType = Enum.ScaleType.Fit,
+			}, box)
+			loadImage(img, d.Image, function()
+				img.Image = ""
+				makeLabel(img, {
+					Size = UDim2.fromScale(1, 1), Text = d.Symbol, Font = Enum.Font.GothamBold, TextSize = 22,
+					TextXAlignment = Enum.TextXAlignment.Center,
+				})
+			end)
+			makeLabel(opt, {
+				Position = UDim2.fromOffset(0, sq + 6), Size = UDim2.new(1, 0, 0, 22), Text = d.Label,
+				Font = Enum.Font.GothamMedium, TextSize = 14, TextXAlignment = Enum.TextXAlignment.Center,
+				TextTruncate = Enum.TextTruncate.AtEnd, TextColor3 = (d.Name == currentDevice) and Theme.Accent or TEXT,
+			})
+			local hit = new("TextButton", {
+				Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Text = "", AutoButtonColor = false, ZIndex = 5,
+			}, opt)
+			hit.Activated:Connect(function()
+				if picked then
+					return
+				end
+				picked = true
+				haptic()
+				overlayFlash(box, 12, WHITE, 0.8, 0.3)
+				finish(function()
+					applyDevice(d.Name, true)
+					autosave()
+				end)
+			end)
+		end
+
+		local buttons = buttonRow(modal.Card, 4, {
+			{ Text = "Cancelar", C1 = GRAY_A, C2 = GRAY_B },
+		})
+		buttons[1].Activated:Connect(function()
+			if picked then
+				return
+			end
+			picked = true
+			finish()
+		end)
 	end
 
 	function Window:Hide()
@@ -3565,6 +3531,12 @@ function SpaceHub:CreateWindow(settings)
 	function Window:SetMenuType(m)
 		applyMode(m == "horizontal" and "horizontal" or "vertical")
 	end
+	function Window:SetDevice(name)
+		return applyDevice(name, true)
+	end
+	function Window:GetDevice()
+		return currentDevice
+	end
 	function Window:Destroy()
 		SpaceHub:Destroy()
 	end
@@ -3579,6 +3551,7 @@ function SpaceHub:CreateWindow(settings)
 		Gui = gui, Container = container, Frame = frame, Header = header, Grab = grab, Body = body, Content = content,
 		TabList = tabList, SettingsApi = sApi, SettingsPage = settingsPage, ShowView = showView, SelectTab = selectTab,
 		ApplyMode = applyMode, SetMinimized = setMinimized, Confirm = confirm, Register = register,
+		ApplyDevice = applyDevice,
 	}
 
 	self._window = Window
@@ -3614,7 +3587,7 @@ function SpaceHub:Destroy()
 	table.clear(themeRegistry)
 	table.clear(softRegistry)
 	table.clear(themeHooks)
-	notifGui, notifHolder = nil, nil
+	notifGui, notifHolder, notifScale = nil, nil, nil
 	self._window = nil
 	self.Flags = {}
 end
@@ -3643,6 +3616,12 @@ SpaceHub.Util = {
 	end,
 	GetMuted = function()
 		return MUTED
+	end,
+	GetDevice = function()
+		return currentDevice
+	end,
+	GetScale = function()
+		return deviceScale
 	end,
 }
 
